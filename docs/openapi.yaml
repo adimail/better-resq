@@ -1,0 +1,672 @@
+openapi: 3.0.3
+info:
+  title: ResQ REST API
+  version: "1.0.0"
+  description: >
+    The official ResQ REST API specification. Features real-time state synchronization,
+    geospatial hazard mapping, and emergency response coordination.
+servers:
+  - url: https://api.resq.app/v1
+    description: Production Environment
+security:
+  - BearerAuth: []
+paths:
+  /stream/events:
+    get:
+      summary: Establish an SSE connection
+      description: Keeps connection open indefinitely to push live map updates. Max 3 connections per User ID.
+      tags:
+        - Real-Time
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          schema:
+            type: number
+            format: float
+        - name: lng
+          in: query
+          required: true
+          schema:
+            type: number
+            format: float
+        - name: radius
+          in: query
+          schema:
+            type: integer
+            default: 5000
+      responses:
+        '200':
+          description: Event stream established
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /auth/login:
+    post:
+      summary: Authenticate user
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone_number
+                - password
+              properties:
+                phone_number:
+                  type: string
+                  example: "+1234567890"
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      summary: Revoke session
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '204':
+          description: Logged out successfully
+
+  /users/me/device:
+    patch:
+      summary: Update device location and push token
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - location
+              properties:
+                fcm_token:
+                  type: string
+                location:
+                  $ref: '#/components/schemas/Location'
+      responses:
+        '204':
+          description: Updated successfully
+
+  /sos:
+    post:
+      summary: Trigger SOS signal
+      tags:
+        - Emergency
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - location
+              properties:
+                location:
+                  $ref: '#/components/schemas/Location'
+                battery_level:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                message:
+                  type: string
+      responses:
+        '202':
+          description: Accepted for processing
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+    get:
+      summary: List active SOS signals
+      tags:
+        - Emergency
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, acknowledged, resolved]
+        - $ref: '#/components/parameters/Bbox'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: List of SOS signals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SosSignal'
+                  next_cursor:
+                    type: string
+                    nullable: true
+
+  /sos/{id}/status:
+    patch:
+      summary: Update SOS status
+      tags:
+        - Emergency
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [acknowledged, resolved]
+      responses:
+        '200':
+          description: Status updated
+
+  /uploads/presigned-url:
+    post:
+      summary: Generate R2 upload URL
+      tags:
+        - Incidents
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content_type
+                - file_size
+              properties:
+                content_type:
+                  type: string
+                  enum: [image/jpeg, image/png, image/webp]
+                file_size:
+                  type: integer
+                  maximum: 5242880
+      responses:
+        '201':
+          description: URL generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  upload_url:
+                    type: string
+                    format: uri
+                  file_key:
+                    type: string
+
+  /incidents:
+    post:
+      summary: Submit incident report
+      tags:
+        - Incidents
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - disaster_type
+                - location
+              properties:
+                disaster_type:
+                  $ref: '#/components/schemas/DisasterType'
+                location:
+                  $ref: '#/components/schemas/Location'
+                description:
+                  type: string
+                  maxLength: 1000
+                image_key:
+                  type: string
+                ai_confidence_score:
+                  type: number
+                  format: float
+                  minimum: 0
+                  maximum: 1
+      responses:
+        '201':
+          description: Incident submitted
+
+  /incidents/{id}/status:
+    patch:
+      summary: Verify or reject report
+      tags:
+        - Incidents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [verified, rejected]
+      responses:
+        '200':
+          description: Status updated
+
+  /danger-zones:
+    get:
+      summary: Retrieve active danger zones
+      tags:
+        - Map
+      parameters:
+        - $ref: '#/components/parameters/Bbox'
+      responses:
+        '200':
+          description: Array of active zones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DangerZone'
+    post:
+      summary: Create a custom danger zone
+      tags:
+        - Map
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - disaster_type
+                - severity_level
+                - boundary_polygon
+              properties:
+                disaster_type:
+                  $ref: '#/components/schemas/DisasterType'
+                severity_level:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                boundary_polygon:
+                  $ref: '#/components/schemas/Polygon'
+      responses:
+        '201':
+          description: Zone created
+
+  /camps:
+    get:
+      summary: List resource camps
+      tags:
+        - Logistics
+      parameters:
+        - $ref: '#/components/parameters/Bbox'
+        - name: type
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Array of camps
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ResourceCamp'
+    post:
+      summary: Deploy a new camp
+      tags:
+        - Logistics
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - camp_type
+                - location
+              properties:
+                name:
+                  type: string
+                camp_type:
+                  type: string
+                  enum: [medical, shelter, food]
+                location:
+                  $ref: '#/components/schemas/Location'
+      responses:
+        '201':
+          description: Camp deployed
+
+  /camps/{id}:
+    patch:
+      summary: Update camp inventory status
+      tags:
+        - Logistics
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - stock_status
+              properties:
+                stock_status:
+                  $ref: '#/components/schemas/StockStatus'
+      responses:
+        '200':
+          description: Camp stock updated
+
+  /broadcasts:
+    post:
+      summary: Send geo-targeted emergency push notification
+      tags:
+        - Emergency
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+                - severity
+                - target_polygon
+              properties:
+                message:
+                  type: string
+                  maxLength: 500
+                severity:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                target_polygon:
+                  $ref: '#/components/schemas/Polygon'
+      responses:
+        '202':
+          description: Broadcast accepted for delivery queue
+
+  /routes/safe:
+    get:
+      summary: Calculate safe route avoiding hazards
+      tags:
+        - Navigation
+      parameters:
+        - name: origin
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "18.5204,73.8567"
+        - name: destination
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "18.5300,73.8600"
+        - name: mode
+          in: query
+          schema:
+            type: string
+            enum: [walking, driving]
+            default: driving
+        - name: fallback
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Route calculation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteResult'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Bbox:
+      name: bbox
+      in: query
+      description: "minLng,minLat,maxLng,maxLat"
+      schema:
+        type: string
+        pattern: "^-?[0-9.]+,-?[0-9.]+,-?[0-9.]+,-?[0-9.]+$"
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Unauthorized:
+      description: Invalid or expired token
+    TooManyRequests:
+      description: Rate limit exceeded
+
+  schemas:
+    Location:
+      type: object
+      required:
+        - lat
+        - lng
+      properties:
+        lat:
+          type: number
+          format: double
+        lng:
+          type: number
+          format: double
+
+    Polygon:
+      type: array
+      description: Array of linear rings, where each ring is an array of [lng, lat] coordinate pairs.
+      items:
+        type: array
+        items:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: number
+            format: double
+
+    DisasterType:
+      type: string
+      enum: [flood, fire, quake, storm, structure_collapse]
+
+    StockStatus:
+      type: string
+      enum: [fully_stocked, low, empty, critical]
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+
+    SosSignal:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        citizen_id:
+          type: string
+          format: uuid
+        location:
+          $ref: '#/components/schemas/Location'
+        battery_level:
+          type: integer
+        message:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    DangerZone:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        disaster_type:
+          $ref: '#/components/schemas/DisasterType'
+        severity_level:
+          type: integer
+        boundary_polygon:
+          $ref: '#/components/schemas/Polygon'
+        is_active:
+          type: boolean
+
+    ResourceCamp:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        camp_type:
+          type: string
+        stock_status:
+          $ref: '#/components/schemas/StockStatus'
+        location:
+          $ref: '#/components/schemas/Location'
+
+    RouteResult:
+      type: object
+      properties:
+        distance_meters:
+          type: integer
+        estimated_minutes:
+          type: integer
+        geometry:
+          type: string
+        route_compromised:
+          type: boolean
+        turn_by_turn:
+          type: array
+          items:
+            type: object

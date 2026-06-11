@@ -1,0 +1,87 @@
+erDiagram
+    USERS ||--o{ REFRESH_TOKENS : "owns"
+    USERS ||--o{ INCIDENT_REPORTS : "submits"
+    USERS ||--o{ DANGER_ZONES : "creates (authorities)"
+    USERS ||--o{ RESOURCE_CAMPS : "manages"
+    USERS ||--o{ SOS_SIGNALS : "triggers (citizen)"
+    USERS ||--o{ SOS_SIGNALS : "resolves (responder)"
+    USERS ||--o{ GEO_BROADCASTS : "broadcasts (authorities)"
+
+    USERS {
+        uuid_v7 id PK
+        varchar(100) full_name
+        varchar(20) phone_number "UNIQUE"
+        varchar(255) password_hash
+        enum role "CITIZEN, AUTHORITY, RESPONDER"
+        varchar(255) fcm_device_token "Nullable"
+        geography(Point) last_known_location "GiST Indexed"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    REFRESH_TOKENS {
+        uuid_v7 id PK
+        uuid_v7 user_id FK
+        varchar(255) token_hash "UNIQUE"
+        boolean is_revoked
+        timestamptz expires_at
+        timestamptz created_at
+    }
+
+    INCIDENT_REPORTS {
+        uuid_v7 id PK
+        uuid_v7 author_id FK
+        enum disaster_type "FLOOD, FIRE, QUAKE, etc."
+        text description
+        varchar(500) image_url
+        geography(Point) location "GiST Indexed"
+        enum status "PENDING, VERIFIED, REJECTED"
+        float ai_confidence_score
+        timestamptz created_at "PARTITION KEY"
+        timestamptz updated_at
+    }
+
+    DANGER_ZONES {
+        uuid_v7 id PK
+        varchar(100) title
+        enum disaster_type "FLOOD, FIRE, QUAKE, etc."
+        int severity_level "CHECK (1 TO 5)"
+        geography(Polygon) boundary "GiST Indexed"
+        boolean is_active
+        uuid_v7 author_id FK
+        timestamptz created_at
+        timestamptz expires_at "Indexed"
+    }
+
+    RESOURCE_CAMPS {
+        uuid_v7 id PK
+        varchar(100) name
+        enum camp_type "MEDICAL, SHELTER, FOOD"
+        enum stock_status "FULL, LOW, EMPTY, CRITICAL"
+        geography(Point) location "GiST Indexed"
+        uuid_v7 manager_id FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    SOS_SIGNALS {
+        uuid_v7 id PK
+        uuid_v7 citizen_id FK
+        geography(Point) location "GiST Indexed"
+        int battery_level "CHECK (0 TO 100)"
+        text message
+        enum status "ACTIVE, ACKNOWLEDGED, RESOLVED"
+        uuid_v7 responder_id FK
+        timestamptz created_at
+        timestamptz resolved_at
+    }
+
+    GEO_BROADCASTS {
+        uuid_v7 id PK
+        uuid_v7 authority_id FK
+        text message
+        int severity "CHECK (1 TO 5)"
+        geography(Polygon) target_area "GiST Indexed"
+        timestamptz sent_at
+    }
+
