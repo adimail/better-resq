@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+tmp
+bin
+backend_test
+coverage.out
+.env
+*.local
+docker-compose*
+Dockerfile*
+
