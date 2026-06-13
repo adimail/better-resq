@@ -1,0 +1,13 @@
+{
+  "name": "resq-frontend",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:citizen": "bun run --cwd apps/citizen-pwa dev",
+    "dev:admin": "bun run --cwd apps/admin-portal dev",
+    "dev": "bun run dev:citizen & bun run dev:admin"
+  }
+}
