@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+**/node_modules
+dist
+**/dist
+.env
+*.local
+.vscode
+.idea
+Dockerfile*
+docker-compose*

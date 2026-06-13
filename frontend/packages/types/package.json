@@ -1,0 +1,9 @@
+{
+  "name": "@resq/types",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}
