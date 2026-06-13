@@ -1,0 +1,28 @@
+{
+  "name": "@resq/citizen-pwa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 3000",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@resq/api-client": "workspace:*",
+    "@resq/types": "workspace:*",
+    "@resq/ui-kit": "workspace:*",
+    "@tanstack/react-form": "latest",
+    "@tanstack/react-query": "latest",
+    "@tanstack/react-router": "latest",
+    "@tensorflow/tfjs": "^4.22.0",
+    "axios": "^1.17.0",
+    "lucide-react": "^1.17.0",
+    "maplibre-gl": "^5.24.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.1",
+    "vite": "^8.0.0"
+  }
+}
