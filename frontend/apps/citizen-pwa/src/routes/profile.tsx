@@ -14,6 +14,7 @@ import {
   Radio,
   MapPin,
   Navigation,
+  FileText,
 } from 'lucide-react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -37,12 +38,14 @@ function ProfilePage() {
   const setLocation = useAppStore((state) => state.setLocation)
 
   const [pickedLocation, setPickedLocation] = useState<Location | null>(null)
-  
+
   const { mapContainer, mapRef, isLoaded } = useMap({
-    center: currentLocation ? [currentLocation.lng, currentLocation.lat] : [73.8567, 18.5204],
+    center: currentLocation
+      ? [currentLocation.lng, currentLocation.lat]
+      : [73.8567, 18.5204],
     zoom: currentLocation ? 14 : 11,
   })
-  
+
   const markerRef = useRef<maplibregl.Marker | null>(null)
 
   useEffect(() => {
@@ -82,7 +85,10 @@ function ProfilePage() {
 
   useEffect(() => {
     if (!mapRef.current || !currentLocation || !isLoaded) return
-    mapRef.current.easeTo({ center: [currentLocation.lng, currentLocation.lat], zoom: 13 })
+    mapRef.current.easeTo({
+      center: [currentLocation.lng, currentLocation.lat],
+      zoom: 13,
+    })
   }, [currentLocation, isLoaded])
 
   const handleSaveLocation = () => {
@@ -128,10 +134,7 @@ function ProfilePage() {
       {isAuthenticated && user ? (
         <section className="flex flex-col items-center gap-3">
           <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
-            <UserCircle
-              className="h-12 w-12 text-primary"
-              aria-hidden="true"
-            />
+            <UserCircle className="h-12 w-12 text-primary" aria-hidden="true" />
           </div>
           <div className="text-center">
             <h2 className="text-xl font-black uppercase tracking-tight">
@@ -185,9 +188,7 @@ function ProfilePage() {
                   <span className="text-[10px] font-black uppercase text-text-muted">
                     Phone
                   </span>
-                  <span className="text-sm font-bold">
-                    {user.phone_number}
-                  </span>
+                  <span className="text-sm font-bold">{user.phone_number}</span>
                 </div>
               </div>
 
@@ -235,16 +236,27 @@ function ProfilePage() {
               )}
             </Card>
 
-            <div className="flex flex-col gap-5 md:flex-row">
-              <Button
-                variant="secondary"
-                size="lg"
-                className="w-full"
-                onClick={() => navigate({ to: '/sos-history' })}
-              >
-                <Radio className="mr-2 h-5 w-5 shrink-0" />
-                SOS History
-              </Button>
+            <div className="flex flex-col gap-5">
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  className="w-full"
+                  onClick={() => navigate({ to: '/sos-history' })}
+                >
+                  <Radio className="mr-2 h-5 w-5 shrink-0" />
+                  SOS History
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  className="w-full"
+                  onClick={() => navigate({ to: '/my-reports' })}
+                >
+                  <FileText className="mr-2 h-5 w-5 shrink-0" />
+                  My Reports
+                </Button>
+              </div>
 
               <Button
                 variant="danger"
@@ -313,9 +325,8 @@ function ProfilePage() {
                   Selected Coordinates
                 </p>
                 <p className="text-sm font-black">
-                  {pickedLocation.lat.toFixed(5)}, {pickedLocation.lng.toFixed(
-                    5,
-                  )}
+                  {pickedLocation.lat.toFixed(5)},{' '}
+                  {pickedLocation.lng.toFixed(5)}
                 </p>
               </div>
             )}
@@ -334,3 +345,4 @@ function ProfilePage() {
     </main>
   )
 }
+

@@ -60,7 +60,9 @@ function ReportPage() {
   )
 
   const { mapContainer, mapRef, isLoaded } = useMap({
-    center: reportLocation ? [reportLocation.lng, reportLocation.lat] : [73.8567, 18.5204],
+    center: reportLocation
+      ? [reportLocation.lng, reportLocation.lat]
+      : [73.8567, 18.5204],
     zoom: 15,
   })
 
@@ -124,6 +126,9 @@ function ReportPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
+    if (step !== 3) return
+
     if (!reportLocation) {
       toast.error('Location required to submit report')
       return
@@ -164,11 +169,11 @@ function ReportPage() {
                 headers: { 'Content-Type': file.type },
               })
             } catch (uploadErr) {
-              console.warn('Mock S3 upload failed (expected in dev), continuing with submission.', uploadErr)
+              console.warn('Mock upload skip', uploadErr)
             }
             finalImageKey = file_key
           } catch (e) {
-            console.warn('Failed to get upload URL', e)
+            console.warn('Upload URL failed', e)
           }
         }
       }
@@ -180,7 +185,7 @@ function ReportPage() {
         image_key: finalImageKey || undefined,
         ai_confidence_score: 0.85,
       })
-      
+
       setDescription('')
       setPhotoName('')
       setStep(1)
@@ -232,7 +237,6 @@ function ReportPage() {
                 variant={disasterType === value ? 'primary' : 'secondary'}
                 onClick={() => setDisasterType(value)}
                 className="flex min-h-28 flex-col items-start justify-between p-4 text-left"
-                aria-pressed={disasterType === value}
               >
                 <Icon className="h-10 w-10" aria-hidden="true" />
                 <span className="text-sm font-black uppercase tracking-tight">
@@ -243,14 +247,14 @@ function ReportPage() {
           </section>
         )}
 
-        <div className={`flex flex-col gap-4 ${step === 2 ? 'flex' : 'hidden'}`}>
+        <div
+          className={`flex flex-col gap-4 ${step === 2 ? 'flex' : 'hidden'}`}
+        >
           <div className="relative h-80 w-full rounded-xl overflow-hidden border border-[var(--color-border)] bg-[var(--color-map-land)]">
             <div ref={mapContainer} className="h-full w-full" />
-
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center pb-8">
               <MapPin className="h-10 w-10 text-danger drop-shadow-xl" />
             </div>
-
             <Button
               type="button"
               variant="secondary"
@@ -260,7 +264,6 @@ function ReportPage() {
               <LocateFixed className="h-5 w-5 text-primary" />
             </Button>
           </div>
-
           <Card className="flex items-center justify-between bg-[var(--color-surface-muted)] py-3 px-4">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-text-muted">
@@ -274,19 +277,12 @@ function ReportPage() {
             </div>
             <Badge variant="neutral">Adjustable</Badge>
           </Card>
-
-          <p className="text-center text-[11px] font-bold uppercase text-text-muted">
-            Drag map to position pin exactly on the hazard
-          </p>
         </div>
 
         {step === 3 && (
           <Card className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <label
-                htmlFor="photo"
-                className="text-xs font-black uppercase tracking-widest text-text-muted"
-              >
+              <label className="text-xs font-black uppercase tracking-widest text-text-muted">
                 Photo
               </label>
               <label className="pressable flex min-h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-muted)] p-4 text-center">
@@ -306,12 +302,8 @@ function ReportPage() {
                 />
               </label>
             </div>
-
             <div className="flex flex-col gap-2">
-              <label
-                htmlFor="description"
-                className="text-xs font-black uppercase tracking-widest text-text-muted"
-              >
+              <label className="text-xs font-black uppercase tracking-widest text-text-muted">
                 Description
               </label>
               <textarea
@@ -320,17 +312,9 @@ function ReportPage() {
                 onChange={(event) => setDescription(event.target.value)}
                 className={`min-h-32 resize-none rounded-lg border bg-bg-base p-3 text-base font-semibold text-text-main ${descriptionError ? 'border-danger' : 'border-[var(--color-border)]'}`}
                 required
-                minLength={10}
-                aria-invalid={Boolean(descriptionError)}
-                aria-describedby={
-                  descriptionError ? 'description-error' : undefined
-                }
               />
               {descriptionError && (
-                <p
-                  id="description-error"
-                  className="flex items-center gap-1 text-xs font-black uppercase text-danger"
-                >
+                <p className="flex items-center gap-1 text-xs font-black uppercase text-danger">
                   <AlertCircle className="h-4 w-4" aria-hidden="true" />
                   {descriptionError}
                 </p>
@@ -344,18 +328,19 @@ function ReportPage() {
             <Button
               type="button"
               size="lg"
-              disabled={step === 2 && !reportLocation}
-              onClick={() => setStep((value) => Math.min(3, value + 1))}
+              onClick={(e) => {
+                e.preventDefault()
+                if (step === 2 && !reportLocation) {
+                  toast.error('Please select a location')
+                  return
+                }
+                setStep((v) => Math.min(3, v + 1))
+              }}
             >
-              {step === 2 ? 'Confirm Location' : 'Continue'}
+              Continue
             </Button>
           ) : (
-            <Button
-              type="submit"
-              size="lg"
-              disabled={!reportLocation || Boolean(descriptionError) || !description}
-              isLoading={isSubmitting}
-            >
+            <Button type="submit" size="lg" isLoading={isSubmitting}>
               <Upload className="mr-2 h-5 w-5" aria-hidden="true" />
               Submit
             </Button>
@@ -365,7 +350,10 @@ function ReportPage() {
             variant="secondary"
             size="lg"
             disabled={step === 1 || isSubmitting}
-            onClick={() => setStep((value) => Math.max(1, value - 1))}
+            onClick={(e) => {
+              e.preventDefault()
+              setStep((v) => Math.max(1, v - 1))
+            }}
           >
             Back
           </Button>
@@ -374,3 +362,4 @@ function ReportPage() {
     </main>
   )
 }
+

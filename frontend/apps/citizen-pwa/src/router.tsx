@@ -13,6 +13,8 @@ import { Route as registerRoute } from './routes/auth.register'
 import { Route as profileRoute } from './routes/profile'
 import { Route as sosHistoryRoute } from './routes/sos-history'
 import { Route as campsIdRoute } from './routes/camps.$id'
+import { Route as myReportsRoute } from './routes/my-reports'
+import { Route as myReportsIdRoute } from './routes/my-reports.$id'
 import { NotFound } from '@resq/ui-kit'
 
 const routeTree = rootRoute.addChildren([
@@ -29,6 +31,8 @@ const routeTree = rootRoute.addChildren([
   registerRoute,
   profileRoute,
   sosHistoryRoute,
+  myReportsRoute,
+  myReportsIdRoute,
 ])
 
 export const router = createRouter({
