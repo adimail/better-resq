@@ -44,7 +44,7 @@ export const GovTicker = () => {
             Status
           </span>
         </div>
-        <div className="flex-1 flex items-center pl-28 md:pl-32 h-full">
+        <div className="flex-1 flex items-center pl-5 md:pl-32 h-full">
           <span className="text-xs font-black text-success uppercase tracking-widest ml-4">
             No imminent warnings in your area
           </span>

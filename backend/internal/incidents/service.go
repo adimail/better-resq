@@ -1,12 +1,16 @@
 package incidents
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
+	"resq.app/backend/internal/shared/config"
 	"resq.app/backend/internal/shared/db"
 	"resq.app/backend/internal/shared/redis"
 	"resq.app/backend/pkg/geo"
@@ -35,10 +39,21 @@ type DangerZoneReq struct {
 }
 
 func GetPresignedURLService(c *gin.Context) {
-	key := uuid.New().String()
+	cfg := config.Load()
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+
+	dataToSign := "timestamp=" + timestamp + cfg.CloudinaryApiSecret
+	hash := sha1.New()
+	hash.Write([]byte(dataToSign))
+	signature := hex.EncodeToString(hash.Sum(nil))
+
+	uploadUrl := fmt.Sprintf("https://api.cloudinary.com/v1_1/%s/image/upload", cfg.CloudinaryCloudName)
+
 	c.JSON(http.StatusCreated, gin.H{
-		"upload_url": "https://s3.resq.app/upload/" + key,
-		"file_key":   key,
+		"upload_url": uploadUrl,
+		"api_key":    cfg.CloudinaryApiKey,
+		"timestamp":  timestamp,
+		"signature":  signature,
 	})
 }
 
@@ -302,4 +317,40 @@ func CreateDangerZoneService(c *gin.Context) {
 	}
 	redis.PublishEvent(c, "resq:stream:events", map[string]interface{}{"event": "DANGER_ZONE_ACTIVE", "type": req.Type})
 	c.Status(http.StatusCreated)
+}
+
+func UpdateDangerZoneService(c *gin.Context) {
+	role := c.GetString("role")
+	if role != "AUTHORITY" {
+		rfc7807.Error(c, http.StatusForbidden, "Forbidden", "Only authorities can modify danger zones")
+		return
+	}
+	var req DangerZoneReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		rfc7807.Error(c, http.StatusBadRequest, "Invalid Request", "Malformed danger zone payload")
+		return
+	}
+	wkt := geo.BuildPolygonWKT(req.Poly)
+	_, err := db.Pool.Exec(c, "UPDATE danger_zones SET disaster_type = $1, severity_level = $2, boundary = ST_GeomFromText($3, 4326) WHERE id = $4", req.Type, req.Sev, wkt, c.Param("id"))
+	if err != nil {
+		rfc7807.Error(c, http.StatusInternalServerError, "Database Error", "Failed to update danger zone")
+		return
+	}
+	redis.PublishEvent(c, "resq:stream:events", map[string]interface{}{"event": "DANGER_ZONE_UPDATED", "id": c.Param("id")})
+	c.Status(http.StatusOK)
+}
+
+func DeleteDangerZoneService(c *gin.Context) {
+	role := c.GetString("role")
+	if role != "AUTHORITY" {
+		rfc7807.Error(c, http.StatusForbidden, "Forbidden", "Only authorities can delete danger zones")
+		return
+	}
+	_, err := db.Pool.Exec(c, "UPDATE danger_zones SET is_active = FALSE WHERE id = $1", c.Param("id"))
+	if err != nil {
+		rfc7807.Error(c, http.StatusInternalServerError, "Database Error", "Failed to delete danger zone")
+		return
+	}
+	redis.PublishEvent(c, "resq:stream:events", map[string]interface{}{"event": "DANGER_ZONE_DELETED", "id": c.Param("id")})
+	c.Status(http.StatusOK)
 }

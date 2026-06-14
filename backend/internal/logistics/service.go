@@ -99,3 +99,39 @@ func UpdateCampStatusService(c *gin.Context) {
 	redis.PublishEvent(c, "resq:stream:events", map[string]interface{}{"event": "CAMP_STOCK_UPDATED", "camp_id": c.Param("id")})
 	c.Status(http.StatusOK)
 }
+
+func UpdateCampService(c *gin.Context) {
+	role := c.GetString("role")
+	if role != "AUTHORITY" {
+		rfc7807.Error(c, http.StatusForbidden, "Forbidden", "Only authorities can modify camps")
+		return
+	}
+	var req CampReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		rfc7807.Error(c, http.StatusBadRequest, "Invalid Request", "Malformed camp payload")
+		return
+	}
+	_, err := db.Pool.Exec(c, "UPDATE resource_camps SET name = $1, camp_type = $2, location = ST_SetSRID(ST_MakePoint($3, $4), 4326) WHERE id = $5", req.Name, req.Type, req.Location.Lng, req.Location.Lat, c.Param("id"))
+	if err != nil {
+		rfc7807.Error(c, http.StatusInternalServerError, "Database Error", "Failed to update camp")
+		return
+	}
+	redis.PublishEvent(c, "resq:stream:events", map[string]interface{}{"event": "CAMP_UPDATED", "camp_id": c.Param("id")})
+	c.Status(http.StatusOK)
+}
+
+func DeleteCampService(c *gin.Context) {
+	role := c.GetString("role")
+	if role != "AUTHORITY" {
+		rfc7807.Error(c, http.StatusForbidden, "Forbidden", "Only authorities can delete camps")
+		return
+	}
+	_, err := db.Pool.Exec(c, "DELETE FROM resource_camps WHERE id = $1", c.Param("id"))
+	if err != nil {
+		rfc7807.Error(c, http.StatusInternalServerError, "Database Error", "Failed to delete camp")
+		return
+	}
+	redis.PublishEvent(c, "resq:stream:events", map[string]interface{}{"event": "CAMP_DELETED", "camp_id": c.Param("id")})
+	c.Status(http.StatusOK)
+}
+
