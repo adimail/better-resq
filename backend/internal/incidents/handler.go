@@ -14,6 +14,7 @@ func RegisterRoutes(r *gin.RouterGroup) {
 	r.GET("/incidents/:id", auth, getIncidentByID)
 	r.PATCH("/incidents/:id/status", auth, updateIncidentStatus)
 	r.GET("/danger-zones", getDangerZones)
+	r.GET("/danger-zones/:id", getDangerZoneByID)
 	r.POST("/danger-zones", auth, createDangerZone)
 	r.GET("/events/history", auth, getEventHistory)
 }
@@ -46,6 +47,10 @@ func getDangerZones(c *gin.Context) {
 	GetDangerZonesService(c)
 }
 
+func getDangerZoneByID(c *gin.Context) {
+	GetDangerZoneByIDService(c)
+}
+
 func createDangerZone(c *gin.Context) {
 	CreateDangerZoneService(c)
 }
@@ -53,4 +58,3 @@ func createDangerZone(c *gin.Context) {
 func getEventHistory(c *gin.Context) {
 	GetEventHistoryService(c)
 }
-

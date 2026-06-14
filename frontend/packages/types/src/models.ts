@@ -54,6 +54,7 @@ export interface DangerZone {
   severity_level: number
   boundary_polygon: number[][][]
   is_active: boolean
+  created_at: string
   expires_at: string
 }
 

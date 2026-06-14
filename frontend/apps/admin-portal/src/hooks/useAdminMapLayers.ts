@@ -38,6 +38,7 @@ export function useAdminMapLayers(
       if (!e.features?.length) return
       const props = e.features[0].properties
       if (popupRef.current) popupRef.current.remove()
+
       popupRef.current = new maplibregl.Popup()
         .setLngLat(e.lngLat)
         .setHTML(
@@ -45,10 +46,21 @@ export function useAdminMapLayers(
           <div style="font-family: inherit; padding: 4px; min-width: 140px;">
             <div style="font-weight: 900; text-transform: uppercase; font-size: 14px; color: #b91c1c; margin-bottom: 4px;">Severity ${props.severity} Hazard</div>
             <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #666;">Type: ${props.disaster_type?.replace('_', ' ') || 'Unknown'}</div>
+            <button id="view-hazard-btn-${props.id}" style="width: 100%; background: #1976d2; color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer; font-weight: 900; text-transform: uppercase; font-size: 10px; margin-top: 8px;">View Details</button>
           </div>
         `,
         )
         .addTo(map)
+
+      setTimeout(() => {
+        const btn = document.getElementById(`view-hazard-btn-${props.id}`)
+        if (btn) {
+          btn.onclick = () => {
+            navigate({ to: '/hazards/$id', params: { id: props.id } })
+          }
+        }
+      }, 0)
+
       map.flyTo({ center: e.lngLat, zoom: 15, duration: 1500 })
     }
     const mouseEnter = () => {
@@ -65,7 +77,7 @@ export function useAdminMapLayers(
       map.off('mouseenter', 'admin-zones-fill', mouseEnter)
       map.off('mouseleave', 'admin-zones-fill', mouseLeave)
     }
-  }, [isLoaded, mapRef])
+  }, [isLoaded, mapRef, navigate])
 
   useEffect(() => {
     const map = mapRef.current
@@ -79,6 +91,7 @@ export function useAdminMapLayers(
       features: activeZones.map((zone) => ({
         type: 'Feature',
         properties: {
+          id: zone.id,
           severity: zone.severity_level,
           disaster_type: zone.disaster_type,
         },
@@ -225,6 +238,8 @@ export function useAdminMapLayers(
               })
             else if (focusedEvent.type.includes('INCIDENT'))
               navigate({ to: '/triage/$id', params: { id: focusedEvent.id } })
+            else if (focusedEvent.type.includes('DANGER'))
+              navigate({ to: '/hazards/$id', params: { id: focusedEvent.id } })
           }
         }
       }, 0)

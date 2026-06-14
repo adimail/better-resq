@@ -6,6 +6,10 @@ export const mapService = {
     const { data } = await api.get('/danger-zones', { params: { bbox } })
     return data
   },
+  getDangerZoneById: async (id: string): Promise<DangerZone> => {
+    const { data } = await api.get(`/danger-zones/${id}`)
+    return data
+  },
   getCamps: async (bbox: string): Promise<ResourceCamp[]> => {
     const { data } = await api.get('/camps', { params: { bbox } })
     return data
@@ -26,3 +30,4 @@ export const mapService = {
     })
   },
 }
+

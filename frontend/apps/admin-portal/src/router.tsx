@@ -11,6 +11,7 @@ import { Route as triageIdRoute } from './routes/triage.$id'
 import { Route as broadcastRoute } from './routes/broadcast'
 import { Route as sosRoute } from './routes/sos'
 import { Route as hazardsNewRoute } from './routes/hazards.new'
+import { Route as hazardsIdRoute } from './routes/hazards.$id'
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -23,6 +24,7 @@ const routeTree = rootRoute.addChildren([
   logisticsNewRoute,
   logisticsIdRoute,
   hazardsNewRoute,
+  hazardsIdRoute,
   broadcastRoute,
 ])
 
@@ -36,3 +38,4 @@ declare module '@tanstack/react-router' {
     router: typeof router
   }
 }
+

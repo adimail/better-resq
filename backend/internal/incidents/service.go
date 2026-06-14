@@ -259,6 +259,35 @@ func GetDangerZonesService(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
+func GetDangerZoneByIDService(c *gin.Context) {
+	var id, t, geojsonStr string
+	var sev int
+	var act bool
+	var cat time.Time
+	var exp *time.Time
+
+	err := db.Pool.QueryRow(c, "SELECT id, disaster_type, severity_level, is_active, created_at, expires_at, ST_AsGeoJSON(boundary) FROM danger_zones WHERE id = $1", c.Param("id")).Scan(&id, &t, &sev, &act, &cat, &exp, &geojsonStr)
+	if err != nil {
+		rfc7807.Error(c, http.StatusNotFound, "Not Found", "Danger zone not found")
+		return
+	}
+
+	var geojson struct {
+		Coordinates [][][]float64 `json:"coordinates"`
+	}
+	json.Unmarshal([]byte(geojsonStr), &geojson)
+
+	c.JSON(http.StatusOK, map[string]any{
+		"id":               id,
+		"disaster_type":    t,
+		"severity_level":   sev,
+		"is_active":        act,
+		"created_at":       cat,
+		"expires_at":       exp,
+		"boundary_polygon": geojson.Coordinates,
+	})
+}
+
 func CreateDangerZoneService(c *gin.Context) {
 	var req DangerZoneReq
 	if err := c.ShouldBindJSON(&req); err != nil {
