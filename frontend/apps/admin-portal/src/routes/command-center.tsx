@@ -2,10 +2,26 @@ import { createRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Route as rootRoute } from './__root'
 import { ResQStream } from '@resq/api-client'
-import { Card, Badge, Button } from '@resq/ui-kit'
-import { Clock } from 'lucide-react'
+import { Card } from '@resq/ui-kit'
+import {
+  Clock,
+  Activity,
+  AlertTriangle,
+  Radio,
+  Package,
+  FileText,
+  ToggleLeft,
+  ToggleRight,
+} from 'lucide-react'
 import { useMap } from '../hooks/useMap'
 import { useAdminMapLayers } from '../hooks/useAdminMapLayers'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '@resq/api-client'
+import {
+  useAdminCamps,
+  useAdminSOS,
+  useAdminIncidents,
+} from '../hooks/useAdminData'
 
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
@@ -13,171 +29,366 @@ export const Route = createRoute({
   component: CommandCenter,
 })
 
+const formatEventTime = (ts: any) => {
+  if (!ts) return 'Unknown'
+  let d = new Date(ts)
+  if (
+    isNaN(d.getTime()) &&
+    typeof ts === 'string' &&
+    ts.includes('-') &&
+    !ts.includes('T')
+  ) {
+    const ms = parseInt(ts.split('-')[0], 10)
+    if (!isNaN(ms)) d = new Date(ms)
+  }
+  if (isNaN(d.getTime())) return 'Invalid Date'
+  const parts = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(d)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
+  return `${get('day')} ${get('month')} ${get('year')}, ${get('hour')}:${get('minute')}:${get('second')}`
+}
+
 function CommandCenter() {
   const { mapContainer, mapRef, isLoaded } = useMap()
   const [events, setEvents] = useState<any[]>([])
+  const [isListening, setIsListening] = useState(false)
+  const [focusedEvent, setFocusedEvent] = useState<{
+    id: string
+    type: string
+    coords: [number, number]
+    title: string
+    _t?: number
+  } | null>(null)
 
   const [filters, setFilters] = useState({
     hazards: true,
     camps: true,
     sos: true,
+    resolvedSos: false,
   })
 
-  const { camps, sosSignals } = useAdminMapLayers(mapRef, isLoaded, filters)
+  const { data: history } = useQuery({
+    queryKey: ['event-history'],
+    queryFn: () => api.get('/events/history').then((res) => res.data),
+  })
+  const { data: camps } = useAdminCamps()
+  const { data: sosSignals } = useAdminSOS()
+  const { data: incidents } = useAdminIncidents()
 
   useEffect(() => {
+    if (history) setEvents(history)
+  }, [history])
+
+  useAdminMapLayers(mapRef, isLoaded, filters, focusedEvent)
+
+  useEffect(() => {
+    setIsListening(true)
     const stream = new ResQStream(18.5204, 73.8567, 500000)
     stream.connect(
       (data) => {
-        setEvents((prev) =>
-          [
-            {
-              id: crypto.randomUUID(),
-              timestamp: new Date().toISOString(),
-              payload: data,
-            },
-            ...prev,
-          ].slice(0, 50),
-        )
+        setEvents((prev) => {
+          const newEvent = {
+            id: crypto.randomUUID(),
+            timestamp: new Date().toISOString(),
+            payload: data,
+          }
+          let updated = [newEvent, ...prev]
+
+          if (data.event === 'SOS_CREATED' || data.event === 'SOS_UPDATED') {
+            const sosId = data.id
+            const latestIndex = updated.findIndex(
+              (e) =>
+                (e.payload.event === 'SOS_CREATED' ||
+                  e.payload.event === 'SOS_UPDATED') &&
+                e.payload.id === sosId,
+            )
+            if (latestIndex !== -1) {
+              updated.splice(latestIndex, 1)
+            }
+            updated = [newEvent, ...updated]
+          }
+          return updated.slice(0, 50)
+        })
       },
-      () => {},
+      () => setIsListening(false),
     )
     return () => stream.disconnect()
   }, [])
 
-  const handleEventClick = (ev: any) => {
-    const map = mapRef.current
-    if (!map) return
-    const id =
-      ev.payload?.id || ev.payload?.data?.camp_id || ev.payload?.data?.sos_id
-    if (!id) return
+  const handleFeedClick = (ev: any) => {
+    const p = ev.payload
+    let coords: [number, number] | null = null
+    const targetId = p.id || p.camp_id || p.incident_id || ev.id
+    let title = p.event
 
-    let targetLat, targetLng
+    if (p.lng !== undefined && p.lat !== undefined) {
+      coords = [Number(p.lng), Number(p.lat)]
+    }
 
-    if (ev.payload.event === 'SOS_CREATED' && sosSignals?.data) {
-      const sos = sosSignals.data.find((s) => s.id === id)
-      if (sos?.location) {
-        targetLat = sos.location.lat
-        targetLng = sos.location.lng
-      }
-    } else if (ev.payload.event === 'CAMP_STOCK_UPDATED' && camps) {
-      const camp = camps.find((c) => c.id === id)
-      if (camp?.location) {
-        targetLat = camp.location.lat
-        targetLng = camp.location.lng
+    if (!coords) {
+      if (p.event === 'SOS_CREATED' || p.event === 'SOS_UPDATED') {
+        title = 'SOS Signal'
+        if (sosSignals?.data) {
+          const sos = sosSignals.data.find((s: any) => s.id === targetId)
+          if (sos && sos.location) coords = [sos.location.lng, sos.location.lat]
+        }
+      } else if (
+        p.event === 'CAMP_CREATED' ||
+        p.event === 'CAMP_STOCK_UPDATED'
+      ) {
+        title = p.event === 'CAMP_CREATED' ? 'New Camp' : 'Camp Update'
+        if (camps) {
+          const camp = camps.find((c: any) => c.id === targetId)
+          if (camp && camp.location)
+            coords = [camp.location.lng, camp.location.lat]
+        }
+      } else if (
+        p.event === 'INCIDENT_CREATED' ||
+        p.event === 'INCIDENT_VERIFIED'
+      ) {
+        title =
+          p.event === 'INCIDENT_CREATED' ? 'New Report' : 'Verified Hazard'
+        if (incidents) {
+          const inc = incidents.find((i: any) => i.id === targetId)
+          if (inc && inc.location) coords = [inc.location.lng, inc.location.lat]
+        }
       }
     }
 
-    if (targetLat && targetLng) {
-      map.flyTo({ center: [targetLng, targetLat], zoom: 15, duration: 1500 })
+    if (coords && targetId) {
+      setFocusedEvent({
+        id: targetId,
+        type: p.event,
+        coords,
+        title,
+        _t: Date.now(),
+      })
     }
   }
 
+  const getEventIcon = (event: string) => {
+    if (event.includes('SOS')) return <Radio className="w-4 h-4 text-danger" />
+    if (event.includes('CAMP'))
+      return <Package className="w-4 h-4 text-success" />
+    if (event === 'INCIDENT_CREATED')
+      return <FileText className="w-4 h-4 text-warning" />
+    if (event.includes('INCIDENT') || event.includes('DANGER'))
+      return <AlertTriangle className="w-4 h-4 text-warning" />
+    return <Activity className="w-4 h-4 text-primary" />
+  }
+
+  const getEventFormatting = (p: any) => {
+    if (p.event === 'SOS_CREATED')
+      return {
+        title: 'New SOS Signal',
+        color: 'text-danger',
+        bg: 'bg-danger/10',
+        border: 'border-danger/30',
+      }
+    if (p.event === 'SOS_UPDATED')
+      return {
+        title: 'SOS Status Update',
+        color: 'text-warning',
+        bg: 'bg-warning/10',
+        border: 'border-warning/30',
+      }
+    if (p.event === 'CAMP_CREATED')
+      return {
+        title: 'Camp Deployed',
+        color: 'text-success',
+        bg: 'bg-success/10',
+        border: 'border-success/30',
+      }
+    if (p.event === 'CAMP_STOCK_UPDATED')
+      return {
+        title: 'Camp Inventory Changed',
+        color: 'text-success',
+        bg: 'bg-success/10',
+        border: 'border-success/30',
+      }
+    if (p.event === 'INCIDENT_CREATED')
+      return {
+        title: 'New Civilian Report',
+        color: 'text-warning',
+        bg: 'bg-warning/10',
+        border: 'border-warning/30',
+      }
+    if (p.event === 'INCIDENT_VERIFIED')
+      return {
+        title: 'Hazard Verified',
+        color: 'text-danger',
+        bg: 'bg-danger/10',
+        border: 'border-danger/30',
+      }
+    if (p.event === 'DANGER_ZONE_ACTIVE')
+      return {
+        title: 'Danger Zone Active',
+        color: 'text-danger',
+        bg: 'bg-danger/10',
+        border: 'border-danger/30',
+      }
+    return {
+      title: p.event,
+      color: 'text-primary',
+      bg: 'bg-primary/10',
+      border: 'border-primary/30',
+    }
+  }
+
+  const shouldShowEvent = (payload: any) => {
+    if (payload.event === 'SOS_CREATED' || payload.event === 'SOS_UPDATED') {
+      if (!filters.sos) return false
+      const isResolved =
+        payload.status === 'resolved' || payload.status === 'closed'
+      if (isResolved && !filters.resolvedSos) return false
+      return true
+    }
+    if (
+      payload.event === 'CAMP_CREATED' ||
+      payload.event === 'CAMP_STOCK_UPDATED'
+    ) {
+      return filters.camps
+    }
+    if (
+      payload.event === 'INCIDENT_CREATED' ||
+      payload.event === 'INCIDENT_VERIFIED' ||
+      payload.event === 'DANGER_ZONE_ACTIVE'
+    ) {
+      return filters.hazards
+    }
+    return true
+  }
+
+  const filteredEvents = events.filter((ev) => shouldShowEvent(ev.payload))
+
   return (
     <div className="absolute inset-0 flex h-full w-full">
-      <div className="w-[65%] relative h-full bg-[var(--color-map-land)] flex flex-col">
-        <div ref={mapContainer} className="flex-1" />
-        <div className="absolute top-4 left-4 z-10 flex gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setFilters((s) => ({ ...s, hazards: !s.hazards }))}
-            className={`px-4 py-2 flex items-center gap-2 shadow-lg bg-surface/90 backdrop-blur transition-opacity ${!filters.hazards ? 'opacity-50' : ''}`}
-          >
-            <div className="w-3 h-3 rounded-full bg-danger" />
-            <span className="text-xs font-black uppercase tracking-widest text-text-main">
-              Hazards
-            </span>
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setFilters((s) => ({ ...s, camps: !s.camps }))}
-            className={`px-4 py-2 flex items-center gap-2 shadow-lg bg-surface/90 backdrop-blur transition-opacity ${!filters.camps ? 'opacity-50' : ''}`}
-          >
-            <div className="w-3 h-3 rounded-full bg-success" />
-            <span className="text-xs font-black uppercase tracking-widest text-text-main">
-              Camps
-            </span>
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setFilters((s) => ({ ...s, sos: !s.sos }))}
-            className={`px-4 py-2 flex items-center gap-2 shadow-lg bg-surface/90 backdrop-blur transition-opacity ${!filters.sos ? 'opacity-50' : ''}`}
-          >
-            <div className="w-3 h-3 rounded-full bg-danger animate-pulse" />
-            <span className="text-xs font-black uppercase tracking-widest text-text-main">
-              SOS
-            </span>
-          </Button>
-        </div>
+      <div className="w-[65%] relative h-full bg-[var(--color-map-land)]">
+        <div ref={mapContainer} className="flex-1 h-full" />
       </div>
       <div className="w-[35%] bg-surface border-l border-[var(--color-border)] flex flex-col h-full">
         <div className="p-4 border-b border-[var(--color-border)] bg-[var(--color-surface-muted)] shrink-0">
-          <h2 className="text-sm font-black uppercase tracking-widest text-text-main">
-            Live Event Feed
-          </h2>
-          <p className="text-[10px] font-bold text-text-muted mt-1 uppercase">
-            Real-time system stream
-          </p>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-black uppercase tracking-widest text-text-main">
+              Live Event Feed
+            </h2>
+            {isListening && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success/10 text-success">
+                <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+                <span className="text-[9px] font-black uppercase">
+                  Listening...
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setFilters((f) => ({ ...f, hazards: !f.hazards }))}
+              className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 ${filters.hazards ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}
+            >
+              {filters.hazards ? (
+                <ToggleRight className="w-4 h-4" />
+              ) : (
+                <ToggleLeft className="w-4 h-4" />
+              )}{' '}
+              Hazards
+            </button>
+            <button
+              onClick={() => setFilters((f) => ({ ...f, sos: !f.sos }))}
+              className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 ${filters.sos ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}
+            >
+              {filters.sos ? (
+                <ToggleRight className="w-4 h-4" />
+              ) : (
+                <ToggleLeft className="w-4 h-4" />
+              )}{' '}
+              SOS
+            </button>
+            <button
+              onClick={() => setFilters((f) => ({ ...f, camps: !f.camps }))}
+              className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 ${filters.camps ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}
+            >
+              {filters.camps ? (
+                <ToggleRight className="w-4 h-4" />
+              ) : (
+                <ToggleLeft className="w-4 h-4" />
+              )}{' '}
+              Camps
+            </button>
+            <button
+              onClick={() =>
+                setFilters((f) => ({ ...f, resolvedSos: !f.resolvedSos }))
+              }
+              className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 ${filters.resolvedSos ? 'bg-gray-300 text-gray-700' : 'bg-gray-100 text-gray-600'}`}
+            >
+              {filters.resolvedSos ? (
+                <ToggleRight className="w-4 h-4" />
+              ) : (
+                <ToggleLeft className="w-4 h-4" />
+              )}{' '}
+              Ghost SOS
+            </button>
+          </div>
         </div>
+
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-          {events.length === 0 && (
+          {filteredEvents.length === 0 && (
             <div className="flex flex-col items-center justify-center h-40 text-text-muted">
               <Activity className="w-8 h-8 mb-2 opacity-50" />
               <span className="text-xs font-black uppercase tracking-widest">
-                Listening for events...
+                No matching events
               </span>
             </div>
           )}
-          {events.map((ev) => (
-            <button
-              key={ev.id}
-              onClick={() => handleEventClick(ev)}
-              className="block w-full text-left appearance-none bg-transparent p-0 m-0 border-none outline-none focus:outline-none"
-            >
-              <Card className="p-3 cursor-pointer hover:border-primary transition-colors">
-                <div className="flex justify-between items-start mb-2">
-                  <Badge
-                    variant={
-                      ev.payload.event === 'SOS_CREATED' ? 'danger' : 'neutral'
-                    }
-                  >
-                    {ev.payload.event || 'SYSTEM_EVENT'}
-                  </Badge>
-                  <div className="flex items-center text-[10px] font-bold text-text-muted uppercase">
-                    <Clock className="w-3 h-3 mr-1" />
-                    {new Date(ev.timestamp).toLocaleTimeString()}
+          {filteredEvents.map((ev) => {
+            const format = getEventFormatting(ev.payload)
+            return (
+              <button
+                key={ev.id}
+                onClick={() => handleFeedClick(ev)}
+                className="block w-full text-left appearance-none bg-transparent p-0 m-0 border-none outline-none focus:outline-none"
+              >
+                <Card
+                  className={`p-3 cursor-pointer hover:border-primary transition-colors hover:shadow-md border ${format.border} ${format.bg}`}
+                >
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-2">
+                      {getEventIcon(ev.payload.event)}
+                      <span
+                        className={`text-[10px] font-black uppercase ${format.color}`}
+                      >
+                        {format.title}
+                      </span>
+                    </div>
+                    <div className="flex items-center text-[10px] font-bold text-text-muted uppercase">
+                      <Clock className="w-3 h-3 mr-1" />
+                      {formatEventTime(ev.timestamp)}
+                    </div>
                   </div>
-                </div>
-                <pre className="text-[10px] font-bold text-text-main bg-black/5 p-2 rounded overflow-x-auto">
-                  {JSON.stringify(ev.payload.data || ev.payload, null, 2)}
-                </pre>
-              </Card>
-            </button>
-          ))}
+                  <div className="text-[11px] font-bold text-text-main bg-surface p-2 rounded truncate border border-black/5">
+                    {ev.payload.type
+                      ? `Type: ${ev.payload.type}`
+                      : ev.payload.name
+                        ? `Name: ${ev.payload.name}`
+                        : ev.payload.status
+                          ? `Status: ${ev.payload.status}`
+                          : ev.payload.message || 'System alert triggered'}
+                  </div>
+                </Card>
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>
-  )
-}
-
-function Activity(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-    </svg>
   )
 }

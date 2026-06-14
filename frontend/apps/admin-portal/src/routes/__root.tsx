@@ -24,13 +24,13 @@ import {
 } from 'lucide-react'
 import { useEffect } from 'react'
 
-export const Route = createRootRouteWithContext<{ queryClient: ReactQueryClient }>()(
-  {
-    component: RootComponent,
-    pendingComponent: LoadingScreen,
-    errorComponent: ({ reset }) => <ErrorScreen onRetry={reset} />,
-  },
-)
+export const Route = createRootRouteWithContext<{
+  queryClient: ReactQueryClient
+}>()({
+  component: RootComponent,
+  pendingComponent: LoadingScreen,
+  errorComponent: ({ reset }) => <ErrorScreen onRetry={reset} />,
+})
 
 function RootComponent() {
   const navigate = useNavigate()
@@ -55,24 +55,33 @@ function RootComponent() {
       (payload) => {
         switch (payload.event) {
           case 'SOS_CREATED':
+            queryClient.invalidateQueries({ queryKey: ['admin-sos'] })
+            toast.error('New SOS Signal Received!')
+            break
           case 'SOS_UPDATED':
             queryClient.invalidateQueries({ queryKey: ['admin-sos'] })
-            if (payload.event === 'SOS_CREATED') {
-              toast.error('New SOS Signal Received!')
-            }
+            break
+          case 'INCIDENT_CREATED':
+            queryClient.invalidateQueries({ queryKey: ['admin-incidents'] })
+            toast.info('A new civilian incident report was submitted.')
             break
           case 'INCIDENT_VERIFIED':
           case 'DANGER_ZONE_ACTIVE':
             queryClient.invalidateQueries({ queryKey: ['admin-danger-zones'] })
             queryClient.invalidateQueries({ queryKey: ['admin-incidents'] })
+            toast.warning('A new Danger Zone is now active on the map.')
             break
           case 'CAMP_CREATED':
+            queryClient.invalidateQueries({ queryKey: ['admin-camps'] })
+            toast.success('A new resource camp has been deployed.')
+            break
           case 'CAMP_STOCK_UPDATED':
             queryClient.invalidateQueries({ queryKey: ['admin-camps'] })
+            toast.info('Camp stock status has been updated.')
             break
         }
       },
-      () => {}
+      () => {},
     )
 
     return () => stream.disconnect()
@@ -206,8 +215,8 @@ function RootComponent() {
           <Outlet />
         </div>
       </main>
-
       <Toaster position="top-right" expand={false} richColors />
     </div>
   )
 }
+

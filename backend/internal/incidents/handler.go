@@ -15,6 +15,7 @@ func RegisterRoutes(r *gin.RouterGroup) {
 	r.PATCH("/incidents/:id/status", auth, updateIncidentStatus)
 	r.GET("/danger-zones", getDangerZones)
 	r.POST("/danger-zones", auth, createDangerZone)
+	r.GET("/events/history", auth, getEventHistory)
 }
 
 func getPresignedURL(c *gin.Context) {
@@ -47,5 +48,9 @@ func getDangerZones(c *gin.Context) {
 
 func createDangerZone(c *gin.Context) {
 	CreateDangerZoneService(c)
+}
+
+func getEventHistory(c *gin.Context) {
+	GetEventHistoryService(c)
 }
 
