@@ -1,6 +1,11 @@
 import { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
-import type { DangerZone, Location, ResourceCamp } from '@resq/types'
+import type {
+  DangerZone,
+  Location,
+  ResourceCamp,
+  RouteResult,
+} from '@resq/types'
 import { useMap } from '../hooks/useMap'
 import { useNavigate } from '@tanstack/react-router'
 
@@ -10,12 +15,18 @@ export const MapView = ({
   camps,
   bottomPadding = 0,
   focusedCoordinate,
+  route,
+  onRouteToCamp,
+  onRouteToLocation,
 }: {
   location?: Location
   dangerZones: DangerZone[]
   camps: ResourceCamp[]
   bottomPadding?: number
   focusedCoordinate?: Location
+  route?: RouteResult | null
+  onRouteToCamp?: (campId: string) => void
+  onRouteToLocation?: (lat: number, lng: number) => void
 }) => {
   const { mapContainer, mapRef, isLoaded } = useMap({
     center: location ? [location.lng, location.lat] : [73.8567, 18.5204],
@@ -30,6 +41,7 @@ export const MapView = ({
   const navigate = useNavigate()
   const markersRef = useRef<maplibregl.Marker[]>([])
   const popupRef = useRef<maplibregl.Popup | null>(null)
+  const customPinRef = useRef<maplibregl.Marker | null>(null)
 
   useEffect(() => {
     if (!isLoaded || !mapRef.current) return
@@ -87,15 +99,69 @@ export const MapView = ({
     const mouseLeaveHandler = () => {
       map.getCanvas().style.cursor = ''
     }
+
+    const generalMapClickHandler = (e: maplibregl.MapMouseEvent) => {
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ['danger-zones-fill'],
+      })
+      if (features.length > 0) return
+
+      if (customPinRef.current) {
+        customPinRef.current.remove()
+      }
+
+      const el = document.createElement('div')
+      el.className =
+        'h-5 w-5 bg-[var(--color-primary)] rounded-full border-2 border-white shadow-lg cursor-pointer'
+
+      const popup = new maplibregl.Popup({ offset: 15 }).setHTML(`
+        <div style="font-family: inherit; padding: 4px;">
+          <div style="font-weight: 900; text-transform: uppercase; font-size: 12px; margin-bottom: 8px;">Dropped Pin</div>
+          <button id="route-custom-btn" style="width: 100%; background: #1976d2; color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer; font-weight: 900; text-transform: uppercase; font-size: 10px;">Route Here</button>
+        </div>
+      `)
+
+      popup.on('open', () => {
+        setTimeout(() => {
+          const btn = document.getElementById('route-custom-btn')
+          if (btn) {
+            btn.onclick = () => {
+              if (onRouteToLocation) {
+                onRouteToLocation(e.lngLat.lat, e.lngLat.lng)
+              }
+              popup.remove()
+              if (customPinRef.current) customPinRef.current.remove()
+            }
+          }
+        }, 0)
+      })
+
+      customPinRef.current = new maplibregl.Marker({ element: el })
+        .setLngLat(e.lngLat)
+        .setPopup(popup)
+        .addTo(map)
+
+      customPinRef.current.togglePopup()
+
+      map.flyTo({
+        center: e.lngLat,
+        zoom: 15,
+        duration: 1500,
+      })
+    }
+
     map.on('click', 'danger-zones-fill', clickHandler)
     map.on('mouseenter', 'danger-zones-fill', mouseEnterHandler)
     map.on('mouseleave', 'danger-zones-fill', mouseLeaveHandler)
+    map.on('click', generalMapClickHandler)
+
     return () => {
       map.off('click', 'danger-zones-fill', clickHandler)
       map.off('mouseenter', 'danger-zones-fill', mouseEnterHandler)
       map.off('mouseleave', 'danger-zones-fill', mouseLeaveHandler)
+      map.off('click', generalMapClickHandler)
     }
-  }, [isLoaded, navigate])
+  }, [isLoaded, navigate, onRouteToLocation])
 
   useEffect(() => {
     const map = mapRef.current
@@ -140,7 +206,8 @@ export const MapView = ({
         `),
         )
         .addTo(map)
-      element.addEventListener('click', () => {
+      element.addEventListener('click', (e) => {
+        e.stopPropagation()
         map.flyTo({
           center: [location.lng, location.lat],
           zoom: 15,
@@ -161,16 +228,25 @@ export const MapView = ({
           <div style="font-weight: 900; text-transform: uppercase; font-size: 14px; margin-bottom: 4px; color: #166534;">${camp.name}</div>
           <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #666;">Type: ${camp.camp_type}</div>
           <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #666;">Status: ${camp.stock_status.replace('_', ' ')}</div>
-          <button id="view-camp-btn-${camp.id}" style="width: 100%; background: #1976d2; color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer; font-weight: 900; text-transform: uppercase; font-size: 10px; margin-top: 8px;">View Details</button>
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button id="view-camp-btn-${camp.id}" style="flex: 1; background: #e0e0e0; color: #333; border: none; padding: 6px; border-radius: 4px; cursor: pointer; font-weight: 900; text-transform: uppercase; font-size: 10px;">Details</button>
+            <button id="route-camp-btn-${camp.id}" style="flex: 1; background: #1976d2; color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer; font-weight: 900; text-transform: uppercase; font-size: 10px;">Route</button>
+          </div>
         </div>
       `)
 
       popup.on('open', () => {
         setTimeout(() => {
-          const btn = document.getElementById(`view-camp-btn-${camp.id}`)
-          if (btn) {
-            btn.onclick = () => {
+          const detailBtn = document.getElementById(`view-camp-btn-${camp.id}`)
+          const routeBtn = document.getElementById(`route-camp-btn-${camp.id}`)
+          if (detailBtn) {
+            detailBtn.onclick = () =>
               navigate({ to: '/camps/$id', params: { id: camp.id } })
+          }
+          if (routeBtn) {
+            routeBtn.onclick = () => {
+              if (onRouteToCamp) onRouteToCamp(camp.id)
+              popup.remove()
             }
           }
         }, 0)
@@ -181,7 +257,8 @@ export const MapView = ({
         .setPopup(popup)
         .addTo(map)
 
-      element.addEventListener('click', () => {
+      element.addEventListener('click', (e) => {
+        e.stopPropagation()
         map.flyTo({
           center: [camp.location.lng, camp.location.lat],
           zoom: 15,
@@ -190,7 +267,7 @@ export const MapView = ({
       })
       markersRef.current.push(marker)
     })
-  }, [camps, location, isLoaded, navigate])
+  }, [camps, location, isLoaded, navigate, onRouteToCamp])
 
   useEffect(() => {
     const map = mapRef.current
@@ -237,10 +314,60 @@ export const MapView = ({
     })
   }, [dangerZones, isLoaded])
 
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !isLoaded) return
+
+    if (map.getLayer('safe-route-line')) map.removeLayer('safe-route-line')
+    if (map.getSource('safe-route')) map.removeSource('safe-route')
+
+    if (!route) return
+
+    map.addSource('safe-route', {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        properties: {},
+        geometry: route.geometry as any,
+      },
+    })
+
+    const lineColor = route.route_compromised ? '#f57c00' : '#1976d2'
+    const lineDash = route.route_compromised ? [2, 2] : [1]
+
+    map.addLayer({
+      id: 'safe-route-line',
+      type: 'line',
+      source: 'safe-route',
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round',
+      },
+      paint: {
+        'line-color': lineColor,
+        'line-width': 6,
+        'line-dasharray': lineDash,
+      },
+    })
+
+    const coords = route.geometry.coordinates
+    if (coords.length > 0) {
+      const bounds = coords.reduce(
+        (bounds, coord) => {
+          return bounds.extend(coord as [number, number])
+        },
+        new maplibregl.LngLatBounds(
+          coords[0] as [number, number],
+          coords[0] as [number, number],
+        ),
+      )
+      map.fitBounds(bounds, { padding: 50, duration: 1000 })
+    }
+  }, [route, isLoaded])
+
   return (
     <div className="absolute inset-0 h-full w-full bg-[var(--color-map-land)]">
       <div ref={mapContainer} className="absolute inset-0 h-full w-full" />
     </div>
   )
 }
-

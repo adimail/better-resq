@@ -7,6 +7,7 @@ ResQ is a high-performance, resilient platform designed for real-time disaster r
 ### 1. Backend: Modular Monolith (Go)
 The backend is built as a **Strict Modular Monolith** in Go. This allows for clear domain separation while maintaining deployment simplicity.
 - **Geospatial Logic**: Uses **PostGIS** for high-precision spatial queries (e.g., "Is this user inside a flood zone?").
+- **Routing Engine**: Integrates a self-hosted **Valhalla** instance to calculate dynamic escape routes that mathematically avoid intersecting with active hazard polygons.
 - **State Propagation**: Employs **Redis Streams** as an event ledger. When data changes in Postgres, a delta is written to Redis.
 - **Real-time Sync**: A specialized **SSE (Server-Sent Events) Hub** consumes Redis Streams and pushes updates to connected clients without polling.
 
@@ -26,7 +27,7 @@ The frontend uses a modern monorepo structure to share code between the Citizen 
 |---|---|
 | **Backend** | Go 1.25, Gin, SQLC, pgx/v5 |
 | **Frontend** | React 19, Vite 8, Bun, Tailwind CSS |
-| **Data** | PostgreSQL 16, PostGIS 3.4 |
+| **Data & Routing** | PostgreSQL 16, PostGIS 3.4, Valhalla |
 | **Real-time** | Redis 7 (Streams), SSE |
 | **DevOps** | Docker Compose, GitHub Actions (CI) |
 
@@ -89,6 +90,7 @@ make dev
 ## Key Features
 
 - **SOS Lifecycle**: 3-second long-press trigger with battery monitoring and responder acknowledgement.
-- **Safe Evacuation**: Real-time routing that avoids "Danger Zone" polygons based on severity levels.
+- **Safe Evacuation**: Real-time, turn-by-turn routing (Walking & Driving modes) powered by Valhalla, dynamically calculating paths that completely avoid active "Danger Zone" polygons based on severity levels.
 - **Geo-Broadcasts**: Authority-driven push notifications targeted at users physically inside a specific map area.
 - **Offline Resilience**: "Store and Forward" mechanism for incident reports; data flushes automatically when signal returns.
+

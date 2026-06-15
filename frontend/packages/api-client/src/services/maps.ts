@@ -14,9 +14,13 @@ export const mapService = {
     const { data } = await api.get('/camps', { params: { bbox } })
     return data
   },
-  getSafeRoute: async (origin: string, dest: string): Promise<RouteResult> => {
+  getSafeRoute: async (
+    origin: string,
+    dest: string,
+    mode: 'driving' | 'walking' = 'driving',
+  ): Promise<RouteResult> => {
     const { data } = await api.get('/routes/safe', {
-      params: { origin, destination: dest, fallback: true },
+      params: { origin, destination: dest, mode, fallback: true },
     })
     return data
   },
@@ -56,4 +60,3 @@ export const mapService = {
     return api.delete(`/camps/${id}`)
   },
 }
-

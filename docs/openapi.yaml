@@ -660,13 +660,30 @@ components:
       properties:
         distance_meters:
           type: integer
+          description: Total route distance in meters
         estimated_minutes:
           type: integer
+          description: Estimated travel time
         geometry:
-          type: string
+          type: object
+          description: GeoJSON LineString representation of the path
+          properties:
+            type:
+              type: string
+              example: "LineString"
+            coordinates:
+              type: array
+              items:
+                type: array
+                items:
+                  type: number
+                  format: double
         route_compromised:
           type: boolean
+          description: True if the route intersects lower-severity hazards
         turn_by_turn:
           type: array
           items:
-            type: object
+            type: string
+            description: Human readable maneuvers
+

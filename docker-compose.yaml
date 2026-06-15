@@ -27,6 +27,23 @@ services:
     volumes:
       - redis_data:/data
 
+  valhalla:
+    image: ghcr.io/nilsnolde/docker-valhalla/valhalla:latest
+    container_name: resq-valhalla
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./valhalla_data:/custom_files
+    environment:
+      - build_elevation=False
+      - build_admins=False
+      - build_time_zones=False
+      - force_rebuild=False
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
   backend:
     build:
       context: ./backend
@@ -37,12 +54,15 @@ services:
       - DATABASE_URL=postgres://resq:resq@postgres:5432/resq_dev?sslmode=disable
       - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET=super-secret-production-key-must-be-changed
+      - VALHALLA_URL=http://valhalla:8002
     ports:
       - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      valhalla:
         condition: service_healthy
 
   citizen-pwa:

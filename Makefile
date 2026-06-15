@@ -1,4 +1,4 @@
-.PHONY: setup services-up services-down services-clean db-up db-seed db-reset sqlc dev-api dev-web dev clean run
+.PHONY: setup services-up services-down services-clean db-up db-seed db-reset sqlc dev-api dev-web dev clean run valhalla-clean
 
 DB_URL="postgres://resq:resq@localhost:5432/resq_dev?sslmode=disable"
 
@@ -9,7 +9,7 @@ setup:
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 
 services-up:
-	docker compose up -d postgres redis
+	docker compose up -d postgres redis valhalla
 
 services-down:
 	docker compose stop
@@ -22,7 +22,6 @@ db-up:
 	cd backend && goose -dir sql/migrations postgres $(DB_URL) up
 
 db-seed:
-	@echo "🌱 Seeding database..."
 	cd scripts && bun install && bun run seed.ts
 
 db-reset:
@@ -47,4 +46,8 @@ clean:
 	rm -rf node_modules
 	rm -rf frontend/node_modules
 	rm -rf backend/tmp
+
+valhalla-clean:
+	rm -rf valhalla_data/valhalla_tiles
+	rm -f valhalla_data/valhalla.json
 

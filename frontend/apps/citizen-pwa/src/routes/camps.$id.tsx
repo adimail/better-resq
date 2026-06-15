@@ -1,13 +1,20 @@
 import { createRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { Route as rootRoute } from './__root'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '@resq/api-client'
+import { api, mapService } from '@resq/api-client'
 import { Card, Badge, Skeleton, Button } from '@resq/ui-kit'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
-import { ChevronLeft, MapPin, Package, Navigation, Building2 } from 'lucide-react'
-import { AppLink } from '../components/AppLink'
+import {
+  ChevronLeft,
+  MapPin,
+  Package,
+  Navigation,
+  Building2,
+} from 'lucide-react'
 import { useMap } from '../hooks/useMap'
+import { useAppStore } from '../store/useAppStore'
+import { toast } from 'sonner'
 
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
@@ -18,6 +25,12 @@ export const Route = createRoute({
 function CampDetailPage() {
   const { id } = useParams({ from: Route.id })
   const navigate = useNavigate()
+  const currentLocation = useAppStore((state) => state.currentLocation)
+  const setActiveRoute = useAppStore((state) => state.setActiveRoute)
+  const setActiveRouteTarget = useAppStore(
+    (state) => state.setActiveRouteTarget,
+  )
+  const [isRouting, setIsRouting] = useState(false)
 
   const { data: camp, isLoading } = useQuery({
     queryKey: ['camp', id],
@@ -43,8 +56,9 @@ function CampDetailPage() {
     }
 
     const el = document.createElement('div')
-    el.className = 'w-6 h-6 bg-success rounded-full border-2 border-white shadow-lg flex items-center justify-center text-white'
-    
+    el.className =
+      'w-6 h-6 bg-success rounded-full border-2 border-white shadow-lg flex items-center justify-center text-white'
+
     markerRef.current = new maplibregl.Marker({ element: el })
       .setLngLat([camp.location.lng, camp.location.lat])
       .addTo(mapRef.current)
@@ -56,6 +70,26 @@ function CampDetailPage() {
       markerRef.current = null
     }
   }, [camp, isLoaded])
+
+  const handleGetRoute = async () => {
+    if (!currentLocation || !camp) {
+      toast.error('Location unavailable')
+      return
+    }
+    setIsRouting(true)
+    try {
+      const originStr = `${currentLocation.lat},${currentLocation.lng}`
+      const destStr = `${camp.location.lat},${camp.location.lng}`
+      const route = await mapService.getSafeRoute(originStr, destStr, 'driving')
+      setActiveRoute(route)
+      setActiveRouteTarget(camp.location)
+      navigate({ to: '/map' })
+    } catch (e) {
+      toast.error('Could not calculate a safe route to this camp')
+    } finally {
+      setIsRouting(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -71,8 +105,14 @@ function CampDetailPage() {
     return (
       <main className="p-4 flex flex-col gap-4">
         <Card className="border-danger bg-danger/10 text-center py-8">
-          <p className="text-sm font-black uppercase text-danger">Camp not found</p>
-          <Button variant="ghost" className="mt-4" onClick={() => navigate({ to: '/camps' })}>
+          <p className="text-sm font-black uppercase text-danger">
+            Camp not found
+          </p>
+          <Button
+            variant="ghost"
+            className="mt-4"
+            onClick={() => navigate({ to: '/camps' })}
+          >
             Back to Camps
           </Button>
         </Card>
@@ -139,14 +179,16 @@ function CampDetailPage() {
       </main>
 
       <div className="fixed bottom-16 left-0 right-0 p-4 bg-surface border-t border-[var(--color-border)] z-10 pb-6">
-        <AppLink
-          to="/map"
-          className="flex h-14 w-full items-center justify-center rounded-md bg-primary text-sm font-black uppercase tracking-widest text-white shadow-lg pressable no-underline"
+        <Button
+          onClick={handleGetRoute}
+          isLoading={isRouting}
+          className="flex h-14 w-full items-center justify-center rounded-md bg-primary text-sm font-black uppercase tracking-widest text-white shadow-lg"
         >
           <Navigation className="w-5 h-5 mr-2" />
           Get Safe Route
-        </AppLink>
+        </Button>
       </div>
     </div>
   )
 }
+

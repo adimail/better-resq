@@ -1,15 +1,22 @@
 package emergency
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"resq.app/backend/internal/shared/config"
 	"resq.app/backend/internal/shared/db"
 	"resq.app/backend/internal/shared/redis"
 	"resq.app/backend/pkg/geo"
 	"resq.app/backend/pkg/rfc7807"
+	"resq.app/backend/pkg/valhalla"
 )
 
 type SOSReq struct {
@@ -200,12 +207,131 @@ func CreateBroadcastService(c *gin.Context) {
 }
 
 func GetSafeRouteService(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"distance_meters":   4500,
-		"estimated_minutes": 15,
-		"geometry":          "gqreF~j|wM_@??",
-		"route_compromised": false,
-		"turn_by_turn":      []string{},
-	})
-}
+	originStr := c.Query("origin")
+	destStr := c.Query("destination")
+	modeStr := c.Query("mode")
 
+	if originStr == "" || destStr == "" {
+		rfc7807.Error(c, http.StatusBadRequest, "Invalid Request", "Missing origin or destination")
+		return
+	}
+
+	costing := "auto"
+	if modeStr == "walking" {
+		costing = "pedestrian"
+	}
+
+	oParts := strings.Split(originStr, ",")
+	dParts := strings.Split(destStr, ",")
+	if len(oParts) != 2 || len(dParts) != 2 {
+		rfc7807.Error(c, http.StatusBadRequest, "Invalid Request", "Coordinates must be lat,lng")
+		return
+	}
+
+	oLat, _ := strconv.ParseFloat(oParts[0], 64)
+	oLng, _ := strconv.ParseFloat(oParts[1], 64)
+	dLat, _ := strconv.ParseFloat(dParts[0], 64)
+	dLng, _ := strconv.ParseFloat(dParts[1], 64)
+
+	cfg := config.Load()
+
+	getPolys := func(ctx context.Context, minSev int) [][][]float64 {
+		rows, err := db.Pool.Query(ctx, "SELECT ST_AsGeoJSON(boundary) FROM danger_zones WHERE is_active = TRUE AND severity_level >= $1", minSev)
+		if err != nil {
+			return nil
+		}
+		defer rows.Close()
+		var res [][][]float64
+		for rows.Next() {
+			var jsonStr string
+			if err := rows.Scan(&jsonStr); err == nil {
+				var gj struct {
+					Coordinates [][][]float64 `json:"coordinates"`
+				}
+				if err := json.Unmarshal([]byte(jsonStr), &gj); err == nil {
+					if len(gj.Coordinates) > 0 {
+						var poly [][]float64
+						for _, pt := range gj.Coordinates[0] {
+							if len(pt) >= 2 {
+								poly = append(poly, []float64{pt[1], pt[0]})
+							}
+						}
+						res = append(res, poly)
+					}
+				}
+			}
+		}
+		return res
+	}
+
+	fallbackLevels := []int{1, 3, 5}
+	var routeResp *valhalla.RouteResponse
+	var req valhalla.RouteRequest
+	compromised := false
+
+	for i, minSev := range fallbackLevels {
+		polys := getPolys(c, minSev)
+
+		req = valhalla.RouteRequest{
+			Locations: []valhalla.Location{
+				{Lat: oLat, Lon: oLng},
+				{Lat: dLat, Lon: dLng},
+			},
+			Costing: costing,
+		}
+
+		if len(polys) > 0 {
+			if costing == "pedestrian" {
+				req.CostingOptions.Pedestrian.ExcludePolygons = polys
+			} else {
+				req.CostingOptions.Auto.ExcludePolygons = polys
+			}
+		}
+
+		cacheKey := fmt.Sprintf("resq:route:%.4f,%.4f:%.4f,%.4f:sev%d:mode:%s", oLat, oLng, dLat, dLng, minSev, costing)
+		if cached, err := redis.Client.Get(c, cacheKey).Result(); err == nil {
+			c.Data(http.StatusOK, "application/json", []byte(cached))
+			return
+		}
+
+		resp, err := valhalla.GetRoute(cfg.ValhallaURL, req)
+		if err == nil && len(resp.Trip.Legs) > 0 {
+			routeResp = resp
+			if i > 0 {
+				compromised = true
+			}
+			break
+		}
+	}
+
+	if routeResp == nil {
+		rfc7807.Error(c, http.StatusNotFound, "No Route", "Cannot find a route avoiding hazards")
+		return
+	}
+
+	lineStr := geo.DecodePolyline6(routeResp.Trip.Legs[0].Shape)
+	turns := []string{}
+	for _, m := range routeResp.Trip.Legs[0].Maneuvers {
+		turns = append(turns, m.Instruction)
+	}
+
+	result := map[string]interface{}{
+		"distance_meters":   int(routeResp.Trip.Summary.Length * 1000),
+		"estimated_minutes": int(routeResp.Trip.Summary.Time / 60),
+		"geometry": map[string]interface{}{
+			"type":        "LineString",
+			"coordinates": lineStr,
+		},
+		"route_compromised": compromised,
+		"turn_by_turn":      turns,
+	}
+
+	resBytes, _ := json.Marshal(result)
+	cacheKeyFinal := fmt.Sprintf("resq:route:%.4f,%.4f:%.4f,%.4f:sev%d:mode:%s", oLat, oLng, dLat, dLng, fallbackLevels[0], costing)
+	if compromised {
+		cacheKeyFinal = fmt.Sprintf("resq:route:%.4f,%.4f:%.4f,%.4f:sevCOMPROMISED:mode:%s", oLat, oLng, dLat, dLng, costing)
+	}
+	redis.Client.Set(c, cacheKeyFinal, resBytes, 90*time.Second)
+
+	c.JSON(http.StatusOK, result)
+}

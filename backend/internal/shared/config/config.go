@@ -15,6 +15,7 @@ type Config struct {
 	CloudinaryCloudName string
 	CloudinaryApiKey    string
 	CloudinaryApiSecret string
+	ValhallaURL         string
 }
 
 func Load() *Config {
@@ -29,6 +30,7 @@ func Load() *Config {
 		CloudinaryCloudName: getEnv("CLOUDINARY_CLOUD_NAME", "demo"),
 		CloudinaryApiKey:    getEnv("CLOUDINARY_API_KEY", "key"),
 		CloudinaryApiSecret: getEnv("CLOUDINARY_API_SECRET", "secret"),
+		ValhallaURL:         getEnv("VALHALLA_URL", "http://localhost:8002"),
 	}
 }
 

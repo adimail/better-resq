@@ -27,7 +27,10 @@ export interface PaginatedResponse<T> {
 export interface RouteResult {
   distance_meters: number
   estimated_minutes: number
-  geometry: string
+  geometry: {
+    type: string
+    coordinates: number[][]
+  }
   route_compromised: boolean
   turn_by_turn: string[]
 }

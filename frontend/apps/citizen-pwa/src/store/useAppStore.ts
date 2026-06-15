@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { type AppNotification, type DangerZone, type Location } from '@resq/types'
+import {
+  type AppNotification,
+  type DangerZone,
+  type Location,
+  type RouteResult,
+} from '@resq/types'
 
 interface AppState {
   isEmergency: boolean
@@ -13,6 +18,8 @@ interface AppState {
   pendingReports: number
   activeSosId: string | null
   activeSosStatus: string | null
+  activeRoute: RouteResult | null
+  activeRouteTarget: Location | null
   setEmergency: (status: boolean) => void
   setAlerts: (alerts: DangerZone[]) => void
   setLocation: (location?: Location, name?: string, manual?: boolean) => void
@@ -23,6 +30,8 @@ interface AppState {
   incrementPendingReports: () => void
   setActiveSos: (id: string | null, status: string | null) => void
   clearActiveSos: () => void
+  setActiveRoute: (route: RouteResult | null) => void
+  setActiveRouteTarget: (target: Location | null) => void
 }
 
 export const useAppStore = create<AppState>()(
@@ -36,9 +45,12 @@ export const useAppStore = create<AppState>()(
       pendingReports:
         typeof window === 'undefined'
           ? 0
-          : JSON.parse(localStorage.getItem('resq_pending_reports') || '[]').length,
+          : JSON.parse(localStorage.getItem('resq_pending_reports') || '[]')
+              .length,
       activeSosId: null,
       activeSosStatus: null,
+      activeRoute: null,
+      activeRouteTarget: null,
       setEmergency: (status) => set({ isEmergency: status }),
       setAlerts: (alerts) => set({ activeAlerts: alerts }),
       setLocation: (location, name, manual) =>
@@ -53,7 +65,9 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           notifications: [
             notification,
-            ...state.notifications.filter((item) => item.id !== notification.id),
+            ...state.notifications.filter(
+              (item) => item.id !== notification.id,
+            ),
           ],
           lastSyncedAt: new Date().toISOString(),
         })),
@@ -61,8 +75,11 @@ export const useAppStore = create<AppState>()(
       setPendingReports: (count) => set({ pendingReports: count }),
       incrementPendingReports: () =>
         set((state) => ({ pendingReports: state.pendingReports + 1 })),
-      setActiveSos: (id, status) => set({ activeSosId: id, activeSosStatus: status }),
+      setActiveSos: (id, status) =>
+        set({ activeSosId: id, activeSosStatus: status }),
       clearActiveSos: () => set({ activeSosId: null, activeSosStatus: null }),
+      setActiveRoute: (route) => set({ activeRoute: route }),
+      setActiveRouteTarget: (target) => set({ activeRouteTarget: target }),
     }),
     {
       name: 'resq-location-storage',
@@ -73,6 +90,7 @@ export const useAppStore = create<AppState>()(
         activeSosId: state.activeSosId,
         activeSosStatus: state.activeSosStatus,
       }),
-    }
-  )
+    },
+  ),
 )
+
