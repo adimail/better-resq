@@ -19,6 +19,7 @@ import {
 import { toast } from 'sonner'
 import { useAppStore } from '../store/useAppStore'
 import { useMap } from '../hooks/useMap'
+import * as tf from '@tensorflow/tfjs'
 
 const disasterTypes: Array<{
   value: DisasterType
@@ -58,6 +59,7 @@ function ReportPage() {
   const [reportLocation, setReportLocation] = useState<Location | undefined>(
     location,
   )
+  const [aiScore, setAiScore] = useState<number>(1.0)
 
   const { mapContainer, mapRef, isLoaded } = useMap({
     center: reportLocation
@@ -100,6 +102,39 @@ function ReportPage() {
       () => {},
       { enableHighAccuracy: true },
     )
+  }
+
+  const handleImageSelection = async (file: File) => {
+    setPhotoName(file.name)
+    const img = new Image()
+    img.src = URL.createObjectURL(file)
+    await new Promise((r) => (img.onload = r))
+    const canvas = document.createElement('canvas')
+    canvas.width = 224
+    canvas.height = 224
+    const ctx = canvas.getContext('2d')
+    ctx?.drawImage(img, 0, 0, 224, 224)
+
+    try {
+      const model = await tf.loadLayersModel('/models/disaster-net/model.json')
+      const tensor = tf.browser
+        .fromPixels(canvas)
+        .expandDims(0)
+        .toFloat()
+        .div(tf.scalar(255))
+      const prediction = model.predict(tensor) as tf.Tensor
+      const data = await prediction.data()
+      const score = data[0]
+      setAiScore(score)
+      if (score < 0.4) {
+        toast.warning(
+          'This image does not appear to show a disaster. Are you sure you want to upload it?',
+          { duration: 6000 },
+        )
+      }
+    } catch (e) {
+      setAiScore(1.0)
+    }
   }
 
   const descriptionError = useMemo(() => {
@@ -158,22 +193,26 @@ function ReportPage() {
         const file = fileInput.files?.[0]
         if (file) {
           try {
-            const { upload_url, file_key } = await incidentService.getUploadUrl(
-              file.type,
-              file.size,
-            )
-            try {
-              await fetch(upload_url, {
-                method: 'PUT',
-                body: file,
-                headers: { 'Content-Type': file.type },
-              })
-            } catch (uploadErr) {
-              console.warn('Mock upload skip', uploadErr)
-            }
-            finalImageKey = file_key
+            const { upload_url, api_key, timestamp, signature } =
+              await incidentService.getUploadUrl(file.type, file.size)
+
+            const formData = new FormData()
+            formData.append('file', file)
+            formData.append('api_key', api_key)
+            formData.append('timestamp', timestamp)
+            formData.append('signature', signature)
+
+            const uploadRes = await fetch(upload_url, {
+              method: 'POST',
+              body: formData,
+            })
+
+            const uploadData = await uploadRes.json()
+            finalImageKey = uploadData.secure_url
           } catch (e) {
-            console.warn('Upload URL failed', e)
+            toast.error('Failed to upload image. Please try again.')
+            setIsSubmitting(false)
+            return
           }
         }
       }
@@ -183,7 +222,7 @@ function ReportPage() {
         location: reportLocation,
         description: description.trim(),
         image_key: finalImageKey || undefined,
-        ai_confidence_score: 0.85,
+        ai_confidence_score: aiScore,
       })
 
       setDescription('')
@@ -296,9 +335,12 @@ function ReportPage() {
                   accept="image/*"
                   capture="environment"
                   className="sr-only"
-                  onChange={(event) =>
-                    setPhotoName(event.currentTarget.files?.[0]?.name ?? '')
-                  }
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0]
+                    if (file) {
+                      handleImageSelection(file)
+                    }
+                  }}
                 />
               </label>
             </div>
@@ -362,4 +404,3 @@ function ReportPage() {
     </main>
   )
 }
-

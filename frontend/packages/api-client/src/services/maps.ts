@@ -29,5 +29,31 @@ export const mapService = {
       headers: { 'Idempotency-Key': crypto.randomUUID() },
     })
   },
+  updateDangerZone: async (
+    id: string,
+    payload: {
+      disaster_type: string
+      severity_level: number
+      boundary_polygon: number[][][]
+    },
+  ) => {
+    return api.patch(`/danger-zones/${id}`, payload)
+  },
+  deleteDangerZone: async (id: string) => {
+    return api.delete(`/danger-zones/${id}`)
+  },
+  updateCamp: async (
+    id: string,
+    payload: {
+      name: string
+      camp_type: string
+      location: { lat: number; lng: number }
+    },
+  ) => {
+    return api.put(`/camps/${id}`, payload)
+  },
+  deleteCamp: async (id: string) => {
+    return api.delete(`/camps/${id}`)
+  },
 }
 

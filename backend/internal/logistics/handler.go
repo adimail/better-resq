@@ -11,6 +11,8 @@ func RegisterRoutes(r *gin.RouterGroup) {
 	r.GET("/camps/:id", getCampByID)
 	r.POST("/camps", auth, createCamp)
 	r.PATCH("/camps/:id", auth, updateCampStatus)
+	r.PUT("/camps/:id", auth, updateCamp)
+	r.DELETE("/camps/:id", auth, deleteCamp)
 }
 
 func getCamps(c *gin.Context) {
@@ -27,4 +29,12 @@ func createCamp(c *gin.Context) {
 
 func updateCampStatus(c *gin.Context) {
 	UpdateCampStatusService(c)
+}
+
+func updateCamp(c *gin.Context) {
+	UpdateCampService(c)
+}
+
+func deleteCamp(c *gin.Context) {
+	DeleteCampService(c)
 }
